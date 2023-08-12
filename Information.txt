@@ -1,0 +1,953 @@
+*********************-> AUTOFAC IMPLEMENTATION ****************************************
+1- Business katmanýna Autofac nuget package manager aracýlýðý ile pakaet kurulumu yapýyoruz.
+2- Business altýna "DependecnyResolver"->"Autofac" klasörlerini açýyoruz
+3- Autofac klasörü üçerisine "AutofacBusinessModule" sýnýf açýyoruz
+
+	Autofac ve buna benzer "IoC" yapýlarý module mantýðý ile çalýþmaktadýr.
+	//Module Autofac using inin kullanna sýnýfý inherit ediyoruz.
+	public class AutofacBusinessModule:Module{
+		//override ile Load metodunu override ediyoruz
+
+		public override void Load(ContainerBuilder builder){
+			builder.RegisterType<"Concrete somut olan nesneni yi yazýyoruz">().As<"Soyut olan nesneyi yazýyoruz">();
+			//Böylece bu interface soyut nesnesi aslýnda bu somut nesneye karþýlýk gelmektedir. demiþ oluyoruz.
+
+			
+		}
+	}
+
+4- Module oluþturduktan sonra Ýlgili presentation yani WebApi,MVC veya baþka bir ortama bu IOc yapýsýný entegre edeceiðiz.
+ Bunu WepApi de "Program.Cs" içerisinde yapýyoruz.
+5- Bunun için ilgili ortama "Autofac Extensions dependecyInjection" paketiini kuruyoruz.
+6- Program.cs dosyasýnda "Create Host Builder" metod içerisini þu kodlarý yazýyoruz.
+
+.UseserviceProviderFactory(new AutofacServiceProviderFactory())
+.ConfigureContainer<Containeruilder>(builder=>
+{
+	builder.RegisterModule(new //"Burada hangi module ü decreye sokmak istersek onu belirityoruz"AutofacBusinessModule());
+})
+
+7- Artýk projemiz içeirisnde IOc ile dependency injection yapýsý kurulmuþ oldu.
+
+
+*********************** NHIBERNATE AND FLUENTHIBERNATE IMPLEMENTATION **************************************
+
+1- Nhibernate entityframework gibi bir orm aracýdýr. Proje mize dahil etmek için "Nhibernate" paketini core katmanýna ve dataAccess katmanýna kuruyoruz
+2-"DataAccess" katmanýna "FluentHibernate","System.Data.SqlClient" paketini kruyoruz.(Sql Server ile çalýþacaksak)
+3- Core katmanýnda dataAccess kklasörü içerisine Nhibbernate kalsörü açýp "NhibernateHelper" sýnýfý oluþturuoyruz
+
+	public abstract class NhibernateHelper:IDisposable{
+		
+		private ISesssionFactory sessionFactory;
+		public ISesssionFactory SessionFactory{
+			get{return sessionFactory ?? (sessionFactory=InitializeFactory());}
+		}
+
+		public abstract ISessionFactory InitializeFactory();
+
+		public virtual ISession OpenSession()
+		{
+			return SessionFactory.OpenSession();
+		}
+
+		//Dispose metodu implemente edilecek IDisposable interface inden dolayý
+	}
+	
+4- Bu Nihbernate helper ý hangi databae ileçalýþcaksak oradan türeteceðiz. Oracle için -> OracleHelper, SqlServer için SqlServerHlper sýnýflarý açýp oradan inherit edeceðiz.
+DataAccess katmanýnda Concrete içeriisne "Nhibernate kalsörü" onun altýna da "Helpers" kalsörü açýp SqlServerhelper sýnýfý ekliyoruz.
+
+	
+	public class SqlServerHelper:NhibernateHelper{
+		//Base class ýn abstract metodunu burada override ediyoruz.
+		public override ISessionFactory InitializeFactory()
+		{
+			return Fluently.Configure().DataBase(MsSqlConfiguration.Ms2012
+			.ConnectionString("connection string yazýlýr").
+			ShowSql())
+			.Mappings(p=>p.FluentMappings.AddFromAssembly(Assembly.GetExecuteAssembly()))
+			.BuildSessionFactory();
+		}
+	
+	}
+
+	5- NhibernateBaseRepositroy yi de ayný EfEntityBaseRepository deki gibi yazýp iþlemi tnamalyýrouz.
+	 AutofacModule içeriisnde 
+
+		  builder.RegisterType<SqlServerHelper>().As<NhibernateHelper>(); kodunu yazarak Nhibernate in sqlServer kullanacaðýný belirtiyoruz.
+
+
+
+**************** JWT IMPLEMENTATINO ********************************
+1- Core katmanýna Security kalsörü açýyoruz içerisine Jwt klasöürünü açýyoruz.
+2- ITokenHelper interface i açýyoruz.(Dhaa sonra Jwt yerine bþka bir token service kullanabiliriz.)
+
+//Bu ýnterface içerisinde bir tane Token üreten bir metod barýndýrýyor geriye AccessToken döndðrecek
+//User ve user a ait operatin claim bilgileri ile token üreteceðiz
+public interface ITokenHelper{
+  AccessToken CreateToken(User user,List<OperationClaims>)
+}
+
+3-Nuget manager ile "System.IdentityModel.Tokens" ve "Microsoft.Idneitty.Model.Tokens" paketlerini kuruyoruz.
+4- jwt yapýsýnda belirli parametreler var bunlar tokenOptions olarak geçiyor bunlar için bir class açýyoruz
+
+pýblic class TokenOptions{
+ prop string Issuer;
+ prop string Audience;
+ prop string SecurityKey;
+ prop int Expiration
+}
+
+5-Üretitðimiz token ý bir model de tutabilmek için AccessToken class ý açýyoruz
+
+public class AccessToken{
+	prop string Token;
+	prop dateTiem Expiration
+}
+
+6- Itoken Helper implementasyon yapan býr sýnýf oluþturuyoruz "JwtHelper"
+
+public class JwtHelper:ITokenHelper{
+
+	//Constructor oluþturup dakika cinsindne verilen tokenOptionsa daki expiration ý tarih formatýna çeviren
+	ve tokenOptions ý Configten okuyup Model e basan iþlemi yapýcaz
+
+	private TokenOptions tokenOptions;
+	private Datetime accesstoken;
+	cotr(){
+	tokenOptions=ConfigurationManager.GetAppSettings<TokenOptions>("TokenOptions")
+	accessToken=DateTime.AddMinute(tokenOptions.Expiration)Ý
+	}
+
+
+}
+
+	
+Ýmplemente edilen CreateToken için bir tane SecurityKey ve SigningCridential bilgisine ihtiyacýmzý var
+SecurityKey=> oluþturulan helper yardýmý ile Keyi vereceðiz 
+SigningCredential için ise Jwt parametreleri olan claim,ýýssuer ve audience bilgilerini set edip göndereceðiz
+
+
+----SECURÝTY KEY------
+
+ public static SecurityKey CreateSecurityKey(string securityKey)
+{
+ //Symetric securitykey ile geriye seucirty key döndüren helper metodu
+          return new SymmetricSecurityKey(Encoding.UTF8.GetBytes(securityKey));
+}
+
+---Signingcredential---
+
+//Oluþturulan SecuirtyKey i parametre olarak alýp Sigingcredentials oluþturan metod
+
+public static SigingCredentials CreatesigningCredentials(SecurityKey securityKey){
+	return new Signingcredentials(securityKey,SecurityAlgorithism.Hcmac256);
+}
+
+7-> SecurityKey ve Signing Crendentials oluþturduktan sonra token üretmek için JwtSecurityToken nesnesinin özelliklerini dolduran bir metod oluþturuyoruz.
+
+
+public jwtSecurityToken CreatejwtToken(User user,TokenOptions tokenOptions,SigningCredentiasl signingCredentials, List<OperatinClaims> operationClaims){
+	var jwt=new jwtSecuritytoken(){
+		issuer:tokenoptions.Issuer,
+		audience:tokeOptions.Audience,
+		expiration:<Constructor da see t edilen access token filed ý>,
+		claims:SetClaims(user,operationClaims),
+		signingcedentials:signingCredentials
+	};
+
+	return jwt;
+
+}
+-------- CLAIMS EXTENSION AND EXTENSIONS TUTORIALS ---------
+
+->Extension oluþturmak için oluþturuclacak nesnenin tipini this nahatar kelimesi ile metoda parametre olarak veriyoruz.
+Claims üzerinden farklý bir nesne ekleme kistiyosak öreneðin AddEmail metodu extene etmek isityoruz
+
+public static void AddEmail(this ICollection<Claims> claims, string email){
+	claims.Add(new Claim(ClaimTypes.Email,email))
+}
+
+
+9-> "CreatejwtToken" metodu ile geri döenne JwtSecuirtytoken nesnesini "JwtTokenhandler().WriteToken(<JwtSecurityToken>)" metodu ile string deðere çevirip
+AccessToken nesnesine atýyoruz.
+
+
+var jwt=CreatejwtToken(user,tokenOpptions,signingCrendetilas,operationclaims)
+var token=JwtTokenhandler().writeToken(jwt);
+
+return new AccessToken(){
+	Token:token,
+	Expiration:accesssTokenExpiration
+};
+
+
+*************** LOGIN AND REGISTER HASh HELPER *********************
+
+girilen string password deðerini hashleyip veritabanýna kaydeden bir yapý oluþturacaðýz.
+1- Core katmaný içerisine Seucirty Klasörü altýna "Hashing" kalsörüü açýyoruz
+
+2-> HashHekoer sýnýfý içeriiði
+
+public static class HashHelper{
+
+	public static void CreatePasswordHash(string password, out byte[] passwordHash, out byte[] passwordSalt)
+        {
+            using (var hmac=new System.Security.Cryptography.HMACSHA512())
+            {
+                passwordSalt = hmac.Key;
+                passwordHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
+            }
+        }
+	
+	public static bool VerifyPassword(string password,passwordHash[],passwordSalt){
+		using(var hmac=System.Cryptography.HMACSHA512(passwordSalt)) //hmac ile þifreleme algoritmasý oluþtuuruldu passwordSlat veilerek
+		{
+			//verilen password deðeri saltlanmýþ olna hmac ile compute edilir.
+			 var computed=hmac.Computehash(Encoding.UTF(.Getbytes(password)))
+			 for(i=0;i<computedhas.length;i++){
+				if(computedHsh[i]!=passwordHashh[i])
+					return false;
+			 }
+			 return true;
+		}
+	}
+}
+
+
+-----***************> STARTUP CORS AND JWT CONFÝGURATINOS <**************------
+
+1- Yazmýþ olduðumuz jwt configurasyonlarý için start up da kod eklemeiz gerekiyor.
+
+IConfigurain aracý ile ConfigureService is metodu altýna service ayarlaarý yapýyoruz.
+
+-->Cors ayarlarý
+
+Web api uygulamalarýnda sitemize eiriþim saðlayacak olan uygulamalarýn neler olacaðýný belirterek ekstra güvenlik saðlýyoruz.Bunun için 
+
+->services.AddCors(options=>
+{
+	options.AddPolicy("AllowOrigins",
+		builder=>builder.WithOrigins("<burada site domain inin veriyoruz>")
+	)
+}
+
+Daha sonra Middleware ekliyoruz.
+
+_>> app.UserCors(builder=>builder.WithOrigins("<site sismliernin belirtiyoruz>"));
+
+)
+
+
+2->Jwt Configurations
+
+service.AddAuthentication(JwtBearerDefaults.AuthenticationSheme).
+AddjwtBearer(options=>
+	options.TokenValidationParameters=new TokenValidationParameters(){
+		ValidationIssuer=true,
+		ValidationAudience=true,
+		ValidationLifeTime=true,
+		ValidIssuer=tokenOptions.Issuer,
+		ValidAuidenc=tokenOptions.Audience,
+		IssuerSignginKey=SecurityKeyHelper.CreateSecurityKey(tokenOptions.SecurityKey)	
+	};
+)
+
+
+********** CROS CUTTING CONCERNS (AOP) ************************
+
+ Doðru yer Business katmanýdýr.
+ Çünkü deðiþen Presnetation ortamlarýna karþý merkezi olarak kullanýlan yer Business katmanýdýr. Busineess katmanýnda 
+(Validation,Cache,Log,Performance, Auth) yapýlarý birer cross cutting concern dür.
+
+AOP(Aspect oriented programming ) -> Bu yazýlým yaklaþýmý Cross cutting concernlerin Business katmanýnda Attribute özelliði oalrak kullanýlmasýný saðlar. Method içerisinde kod kalabalaýðýnda n ve her metodda ayný 
+kodlarý yazmaktan kurtatarýr. Cacheleme Loglama veya Validation yapýalcak birden fazla Cross Cutting operasyonlarýnýn tek bir merkezden yürütülmesini saðlar.
+
+
+--------------> CASTLE (AUTOFAC EXTENSION) INTERCEPTOR ALTYAPISI <----------------
+->Autofac.Extras.DynamicProxy diyerek tüm gerekli prxy altyapýsýmný kurmuþ oluyoruz.
+->Utilities altýnda Interceptors kalsörü oluþturup daha sonra core katmanýnda "Aspect kalsörü oluþturuyoruz."
+
+1->
+	[AttributeUsage(AttributeTargets.Class|AttributeTargets.Method,AllowMultiple=true,Inherited=true)]
+	public abstract class MethodInterceoptorBaseAttribute:Attribute,IInterceptor{
+		
+		public int Priority { get; set; }
+
+		//IInterceptor imlementasyonunda gelen metod bu metod ile Business class ta yer alan opersaonlarýmzýn CrossCutting yönetimi yapýlmýþ olacak
+        public virtual void Intercept(IInvocation invocation)
+        {
+           
+        }
+
+	}
+
+2-> 
+
+	public class MethodInterceptor:MethodInterceptorBaseAttribute{
+	
+		public virtual void OnBefore(IInvocation invocation){}
+		public virtual void OnAfter(IInvocation invocation){}
+		public virtual void OnSuccess(IInvocation invocation){}
+		public virtual void OnBefore(IInvocation invocation){}
+
+		public override void Intercept(IInvocation invocation){
+			bool isSuccess=true; //baþlangýçta true olarak kabul ediyoruz
+
+			OnBefore();
+
+			try{
+				//metod çalýþtýrýlsýn
+				invocation.Procedd();
+				
+			}
+			catch(Exception){
+				isSuccess=false; //hata ya düþtü ve metod hatalý
+				OnException();
+			}
+			finall{
+				if(isSuccess){
+					OnSuccess();
+				}
+				
+			}
+			OnAfter();
+		}
+
+	}
+
+----> VALIDATION ASPECT için FLUENT VALIDATION YAPISNINIn KURULMASI
+
+1-validationrules klasörünü business katmanýna ekliyoruz
+
+2- Business katmanýna FluentVlidation paketiin kuruyoruz.
+
+3-Validate edilecek entitye göre örnepin Product için product tipinde AbstractValidator sýnýfný inherit ediyoruz
+
+public class ProductValidator:AbstractValidator<Product>{
+	ctor(){
+		
+		//RuleFor metodu ile predicate hangi alanýn ne özellikte olacaðýný belirtiyoruz
+
+		RuleFor(p=>p.Name).NotEmpty(); //product name i boþ geçeilemez demiþ oluyoruz.
+
+	}
+}
+
+4-> Bu Validator nesnelerinni merkezi bir yerden validate Edeceðimizi Aspect ile gerçekleþtireceðiiz söyledik bunun için 
+Bir ValidaionTool oluþturuyoruz.
+
+	public static class ValidationTool{
+		
+		public static void Validate(IValidator validator, object entity){
+			var validationEntity=new ValidationContext<object>(entity);
+			validator.Validate(validationEntity); //parametre olarak gönderilen entity verilen Validator nesnesi ile validate edilecek
+		}
+	}
+
+5-> yukarýda oluþturdupumuz methodInterceptio yapýsýný artýk Aspect ler için kullanýyoruz.
+
+Validation da önemli olan nokta Validator nesnesi ve validasyon yapýalcak entity bilgisi
+Bunun için metodlarýn baþýnda typeOf reflection ile Validator tpini attribute e veiryoruz.
+
+[ValidationAspect(typeof(ProductValidator))]
+
+-> Bu bir method ýnterceptor olduðu için ve metod çalýþtýrýlmadna önce entity kontrolü yapacaðý için "OnBefore()" override edeceðiz
+
+	public class ValidationAspect:MethodInterceptor{
+		
+		//hamgi validator tipi olacaðýný constructor da set ediyoruz
+
+		private Type validatorType;
+		ctor(Type validatorType){
+			//validatorType bir IValidator tipinde deðilse kontrolü yapýyoruz
+			if(!typeof(IValidator).IsAssignableFrom(validatorType))
+			{
+				throw new Exception("Wrong type");
+			}
+
+			this.validatorType=validatorType
+		}
+
+		public override void OnBefore(IInvocation invocation){
+			var validator=(IValidator)Activator.CreateInstance(validatorType); //IValidator tipinde bir instance oluþturduk			
+			var entityType=validatorType.BaseType.GetGnereicArguments()[0]; //ProductValidaotr veya baþka validator sýnýflarýnda baseClassýnda ki generic argumanýn ilk deðerini alýr.
+			var entities=invocation.Argument.Where(p=>p.GetType()==entityType) //bizim bu entityType ýmýz metod içerisindeki parametrelerden entityType ile ayný olmalý
+
+			foreacg(entity in entities){
+				
+				VaidationTool.Validate(validator,entity);
+			}
+		}
+	
+	}
+
+
+
+-------> DYNAMIC PROXY CONFIGURATION <------------
+
+Metodlarda Cross cutting concer ün dahil olabilmesi yani metod ýnterceptorlarýn çalýþabilmesi için configurasyon yapýlmasý gerekir.
+
+Summary-> Okluþturulan ýnterceoptorslarý Selector ile set ederek Autofac Ioc de kullancaðýz. Bu Proxy iþlemini Autofac Module da gerçekleþtireceðiz.
+
+AutfoacBusinessModule:Module{
+
+//assembly seviyesinde tüm araya girme iþlemlerini set et
+var assembly=new System.Reflection.Assembly.GetExecutionAssebly();
+
+builder.RegisterAssemblyType(assembly).AsImplementedInterface()
+.EnableInterfaceInterceptors(new ProxyGenericOptions(){
+	Selector=new AspectInterceptorSelctor()
+}.SingleInstance());
+
+
+-->IInterceptorSelector impelemttasyonu yaprak override edilen metodun içerisine þu kondalrý yazýyoruz
+
+public class AspectInterceptorSelector:IInterceptorSelectors
+
+	override{
+	
+		var classAttribute=type.GetCustomAttributes<metodInterceptorBaseAttribute().ToList();
+
+		var methodAttribute=type.GetMethod(method.Name).GetCustomAttribute<MethodInterceptorAttribute>();
+
+		classAttribute.AddRange(methodAttribute);
+
+		/7burada Base Iterceptor class ta tanýmladýðýmzý Priorty ile aspect önceliðini belirlemiþ oluyoruz.
+		return classAttribute.OrderBy(p=>p.Priority).ToArrya();
+	}
+}
+
+ ***********TRANSACTION SCOPE ASPECT ***************
+
+ TransactionScope birden fazla iþlemin sonucunda iþlemlerin hepsi doðru ise tüm iþlemrini çalýþmasýný saðlayan bir yapýdýr.
+ Örneðin bir dosya eklerken dosya ekledikten sonra mail atmasýný istiyoruz.Dosya eklenirken hata oluþtu ancak mail atma iþlemi gerçekleþecek 
+ Method içindeki yaþam döngüsünde tüm iþelmeri geirye alan yapý unit of work ile suing le kullanýlan TransactionScope tur.
+
+ Biz burda metodun öncesi sonrasý durumlarýnda da deðil metodun yaþam döngüsü üçierisni ele alacaðýmýz için 
+ Aspect baseinde yer alan "Intercept" metodunu override edeceðiz
+
+ public class TransactionScopeAspect:MethodInterceptor{
+	
+	public override void Intercept(IInvocation invocation){
+		using(TransactinScope scope=new TransactioScope()){
+			
+			try{
+				invocation.Procedd();
+				scope.Complete()
+			}
+			catch{
+				scope.Dispose();
+			}
+		
+		}
+	}
+ 
+ }
+
+
+ ********* SERVICE TOOL EXTENSIONSS ********************
+ Core katmanýnda merkezi leiþtirme iþlemi yapacaðýz. Utilities iöçinde Ioc yapýlandýrmasý
+
+1- Öncelikle Serivcetool yazýyoruz. Bu tool aracýlýðý ile kullanmak istediðimiz servicleri Build edeceðiz
+
+ public static class ServiceTool{
+	prop IServiceCollaction Services{get;set;}
+
+	public static IServiceCollection Create(IServiceCollection service){
+		Services=service.BuildServiceProvider();
+		return services;
+	}
+ }
+
+ 2-ServiceTool, Module aracýlýðý ile eklenilmiþ service biglilerini vererek Builde ediyor
+ Bu Serviceleri tek bi çatý altýnda eklemek için ICoreModule ve Core Module oluþturacaðýaz
+
+ -> Utilities altýnda IoC içinde
+ public interface ICommonCoreModule{
+	void Load(IServiceCollection services);
+ }
+
+ -> DependecnyResolver klasörü altýnda
+ public CoreModule:ICommonCoreModule{
+ 
+	public override void Load(IServiceCollection services){
+		services.AddMemorycache()
+
+		//artýk merkezi leþen bu yapýda istediðimiz srviceleri buraya dahil edip çözümleme iþlemini statrup ta gerçekleþtireceðiz
+	}
+ }
+
+ 3->Serviceextension yazýp Module ile yüklenene Serviceleri StartupTa çözümlememiz için Core katmanýnda
+ Extensions içerisine ServiceCollectionExtensions class ý ekliyoruz
+
+	public static class ServiceExtensions{
+		public static IServiceCollection AddDependencyResolver(this IServiceCollection services, ICoreModule[] modules)
+		{
+			foreach(module in modules)
+			{
+				module.Load(services); //Load ile serviceler yüklendi Hangi module lar kullanýlacaksa
+			}
+
+			return ServiceTool.Create(service); //yüklenen service ler Tool ile Build edildei (BuildServiceProvider)
+		}
+	}
+
+4-> son olarak StartUp içeriisnde bu oluþturduðumuz Extension ý verip parametre olarak CoreModule ý veriyoruz.
+
+service.Adddependencyresolvers(new ICommonCoreModule(){
+	new CoreModule()
+})
+
+
+****************** MERMORY CACHE ASCPET AND CACHE CROSSCUTTING ********************************
+
+Biz bu uygulamada Microsoft un memory cache altyapýsýný kullanacaðýz. Ancak ilerleyen zamanlarda baþka teknolojilerin cache iþlemelri kullanýlabilir. Örneðin <Redis>
+Bu yüzden soyutlama dependencyInjetion yaparak "ICacheManger ile baþlýyoruz"
+
+1-ICacheManager yazýlmasý
+
+public interface ICacheManager{
+	
+	T Get<T>(string key); //key deðeri verilerek cache ten T tipinde veri getirme iþlemi
+
+	object Get(string key); //key deðeri verilerek cache ten object tipinde veri getirme iþlemi
+
+	void Add(string key, object data, int duration); //duration boyunca oluþturulan key ile data yý cache e ekleme
+
+	bool IsAdded(string key); //bu key cache te varmý 
+
+	void Remove(string key); //verilen key ile cache ten data yý silme bu iþlemi veritabanýna güncelleme silme veya yeni bir veri ekledikten sonra yapýlýr.
+
+	void RemoveByPattern(string patter); //verilen bir desen ile cache teki verileri silme
+}
+
+2-MemoryCacheManager ve ICachemanager impleemtasyonu yapýlýr.
+
+//Buarada Memorycache ten gelen IMemoryCache yapýsýný kullanacaðýz. Yazmýþ olduðumu ServiceTool ile CoreModule da "services.AddMemoeryCache()" dahil edeceðiz
+
+public class MemoryCacheManager:ICacheManager{
+	
+	private IMemoryCache memoryCache;
+
+	ctor(){
+		 // Microsoft.Extension.DependencyIjection paketinin yüklenmesi gerekir.
+            memoryCache= ServiceTool.ServiceProvider.GetService<IMemoryCache>();
+	}
+
+	public T Get<T>(string key){
+	 return	memorycache.Get<T>( key);
+	}
+
+	public object Get(string key){
+	 return	memorycache.Get( key);
+	}
+
+	public void Add(string key,object data,int duration){
+		memorycache.Set(key,data,TimeSpan.FromMinutes(duration));
+	}
+
+	public void Remove(string key){
+		memeoryCache.Remove(key)
+	}
+}
+
+3-CacheAspect yazýp ilgili CacheManager ý tanýtmak
+
+	public CacheAspect:methodInterceptor{
+
+		private ICacheManager cacheManager;
+		private int duration;
+		ctor(int duration){
+			cacheManager=ServiceTool.ServiceProiveder.GetService<ICacheManager>();
+			this.duration=duration;
+		}
+
+		public override void Intercept(IInvocation invocaiton){
+			
+			var methodName=$"{invocation.Method.ReflectedType.FullName}.{invocation.Method.Name}"
+			var arguments=string.Join(",",invocation.Arguments.Select(x=>x?.ToString()??"<Null>"));
+
+			var key=$"{methodName}({arguments})";
+
+			if(cachManager.IsAdded(key)){
+				invocation.ReturnValue=cachaManager.Get(key);
+				return;
+			}
+			invocation.Proceed();
+			cachaManager.Add(key,invocation.ReturnValue,duration);
+		}
+	}
+
+4- CoreModule ayarlarý
+
+service.AddMemoryCache();
+service.AddSingleton<ICacheManager,MmeorycacheManager>();
+
+
+******************* SECURED(AUTHORAZATÝON) ASPECT ***********************************
+Bu iþlem buysiness katmanýný ilgilendirdiði için Business Aspect e ekliyoruz.
+
+//Burada kullanýcýn cliam lerine eriþebilmek için IHttpContextAccessor yapýsýný dahil etmemiz gerekir
+
+1-CoreModule içerisine gerkli services eklenir.
+
+services.AddSingleton<IHttpContextAccessor,HttpCOntextAccessor>();
+
+
+2-
+ public class SecuredOperation:MethodInterceptor{
+	
+
+	private string[] roles;
+	private IHttpContextAccessor contextAccessor;
+
+	cotr(string roles){
+	 this.roles=roles.Split('');
+	 contextAccessor=ServiceTool.ServiceProivder.GetSerives<IHttpContextAccessor>();
+	}
+
+	public override OnBefore(){
+
+	//Burada User birClaimPrincipal dýr bu mevuct giriþ yapmýþ olan kullanýcýn bilgilerini tutmaktadýr. ClaimsRole nesnesi bir extensiondýr aþaðýda gösterilecektir.
+		var claimResult=contextAccessor.HttpContext.User.ClaimsRole();
+
+		foreach(role in roles){
+			//Attribute e string olarak yazýlan roller mevcut kullanýcýda var mý
+			if(claimsResult.Contains(role){
+				//vars geri döner
+				return;
+			}
+		}
+
+		throw new Exception("yetkiniz yok");
+ 
+ }
+
+
+ 3- ClaimPrincipalExtensions 
+
+ public static class ClaimPrincipalExtensions(){
+	
+	public List<string> Claims(this ClaimPrincipal claimPrincipal, string claimType){
+		
+		return claimPrincipal?.FindAll(claimType)?.Select(x=>x.Value).ToList();
+	}
+
+	public List<String> ClaimRoles(this ClaimPrincipal claimPrincipal){
+		return claimPrincipal.Claims(ClaimTypes.Role);
+	}
+ }
+
+
+ ************* PERFORMACNCE ASPECT *********************
+
+
+
+ ************* LOG CRUS CUTTING AND ASPECTSS **********************
+
+ Log aspect yazmak için öncelikle core katmanýna log4net paketini kuruyoruz. Sunum yapýalcak katmanda yani API de bir tane log4net.config dosyasý açýp içerisine þu kodlarý yazýyoruz
+
+ ->
+
+ <log4net>
+	<appender name="JsonFileAppender" type="log4net.Appender.FileAppender,log4net">
+		<file value="D://Log//log.json" />
+		<layout type="CommonCoreLayer.CrossCuttingConcerns.Logging.Log4Net.JsonLayout, CommonCoreLayer" ></layout>
+	</appender>
+
+	<appender name="SqlServerAppender" type="MicroKnights.Logging.AdoNetAppender, MicroKnights.Log4NetAdoNetAppender">
+		<bufferSize value="1" />
+		<connectionType value="Microsoft.Data.SqlClient.SqlConnection, Microsoft.Data.SqlClient, Version=1.0.0.0,Culture=neutral,PublicKeyToken=23ec7fc2d6eaa4a5"/>
+		<connectionString value="Data Source=(localdb)\mssqllocaldb;Initial Catalog=Northwind;Integrated Security=true;" />
+		<commandText value="INSERT INTO Logs ([Detail],[Date],[Audit]) VALUES (@logDetail,@log_date,@audit)" />
+
+		<parameter>
+			<parameterName value="@logDetail" />
+			<dbType value="String" />
+			<size value="4000" />
+			<layout type="CommonCoreLayer.CrossCuttingConcerns.Logging.Log4Net.JsonLayout, CommonCoreLayer" />
+		</parameter>
+
+		<parameter>
+			<parameterName value="@log_date" />
+			<dbType value="DateTime" />
+			<layout type="log4net.Layout.PatternLayout" value="%date{dd'-'MM'-'yyyy HH':'mm':'ss'.'fff}" />
+		</parameter>
+
+		<parameter>
+			<parameterName value="@audit" />
+			<dbType value="String" />
+			<size value="50" />
+			<layout type="log4net.Layout.PatternLayout" value="%level" />
+		</parameter>
+	</appender>
+
+	<!--<logger name="JsonFileLogger">
+		<level value="All" />
+		<appender-ref ref="JsonFileAppender" />
+	</logger>
+
+	<logger name="DatabaseLogger">
+		<level value="All" />
+		<appender-ref ref="SqlServerAppender" />
+	</logger>-->
+
+	//root içerisinde verilen appender ile ile birden fazla ortama ayný anda loglama yapýlabilmektedir.
+	<root>
+		<level value="DEBUG"/>
+		<appender-ref ref="JsonFileLogger"/>
+		<appender-ref ref="DatabaseLogger"/>
+	</root>
+</log4net>
+
+//Burada logger tag leri içeriisne yazýlanalr bir logger työneteminni belirlemektedir. 
+appender-ref ile logger ýn saðlayýcý yapýsýný yani appender tag i belirtmiþ oluyoruz
+(Database veya file logger olabilir.)
+
+2-> config dosyasýný ekledikten sonra LogDetail ve LogParamter adýnda iki sýnýf açýyoruz.
+
+Log detail bizim Log yapýlan metodun adýný metodun çaðýrýldýðý srevici metodun parametrelerini vs tutuðumuz bir çok bilgiyi içerebilir. Kullanýcý bilgisi vs 
+Biz burda metodun adý ve parametrelerini baz alan bir yapý uygulayacaðoýz
+
+public class LogDetail{
+
+	prop string MethodName{get;set;}
+	prop List<LogParameter>{get;set;}
+
+}
+
+puýblic class LogParameter{
+	prop Name{get;set;}
+	prop object Value{get; set;}
+	prop string Type {get; set;}
+}
+
+3-> LoggerServiceBase sýnýfý oluþturup burda temel Logger altyapýmýzý kuracaðýaz Log4Net in saðlamýi olduðu ILog kullanarak INFO,DEBUG,ERROR,WARNING,FATAL log audit bilgilerini geçeceðiz.
+
+public class LoggerServiceBase{
+	
+	private ILogger log;
+
+	//burada hangi Logger yapýsýný kullanacaðýmýz belirityoruz.
+	ctor(string Name)
+	{
+		 XmlDocument xmlDocument = new XmlDocument();
+            xmlDocument.Load(File.OpenRead("log4net.config"));
+
+            ILoggerRepository loggerRepository = LogManager.CreateRepository(Assembly.GetEntryAssembly(), typeof(log4net.Repository.Hierarchy.Hierarchy));
+
+            log4net.Config.XmlConfigurator.Configure(loggerRepository, xmlDocument["log4net"]);
+
+            //logf4 net cofig dosyasýnda ki logger name ile constructor a gönderilen logger name olaný bulup o yönteme göre loglama yapýyor.
+
+            _log = LogManager.GetLogger(loggerRepository.Name, name); 
+	}
+
+	public bool IsEnabledDebug=> log.IsEnabledDebug;
+	public bool IsEnabledWarning=> log.IsEnabledWarning;
+	public bool IsEnabledFatal=> log.IsEnabledFatal;
+	public bool IsEnabledError=> log.IsEnabledError;
+	public bool IsEnabledInfo=> log.IsEnabledInfo;
+	public bool IsEnabledDebug=> log.IsEnabledDebug;
+
+}
+
+4-> Bu log sisteminin belli bir iskelete sahip olmasý gerekir bunuda Jsonlayout sýnýfý ile saðlýyoruz. LogDetail nesnemizin json þeklinde kayýt edilmesi gerçekleþtiriliyor
+
+//layout skeleton classýmýzdan  inherit edilecek  //format metodunu override edip eziyoruz. Buarada Serializable özelliðine sahip
+
+"SerializLogEvent nesnesini kullanýyoruz." Bu class ile gelen logevent bilgisi içindeki MessageObject i set edeceðiz
+
+public class JsonLayout:layoutSkeleton{
+	
+
+	 public override void Format(TextWriter writer, LoggingEvent loggingEvent)
+        {
+            var logEvent = new SerializableLogEvent(loggingEvent);
+            var json = JsonConvert.SerializeObject(logEvent, Formatting.Indented);
+
+            writer.WriteLine(json);
+        }
+
+        public override void ActivateOptions()
+        {
+            
+        }
+
+}
+
+5-SerializebleLogEvent classýnýn yazýlmasý
+
+[Serializeble]
+public class SerializebleLogEvfent{
+	
+	private LoggingEvent logevent;
+
+	ctor(LoggingEvent logevetn){
+		this.logevent=logevent;
+	}
+
+
+	public object Message=>logevent.MessageObject
+
+	//public object Message
+        //{
+        //    get { return loggingEvent.MessageObject; }
+        //}
+}
+
+6-> LoggerServe class larýmýzý ekleyüp aspect yazmaya baþlayabiliriz. Burada tercih yapýlmasý gerekir. Metoda girilmeden önce mi yani OnBefore veya metod baþarýlý olduðunda OnSuccess iþlemleri yapýlmasý gerekir
+
+public class FileLogger:LoggerServiceBase{
+
+	ctor():base("JsonFileLogger")
+}
+
+public class DatabaseLogger:LoggerServiceBase{
+	ctor():base("DatabaseLogger")
+}
+
+
+7-> Logaspecct yazým. LogAspect için bir loggerService belirlememiz gerekiyor. 
+
+public class LogAspect:MethodInterception{
+	
+	private LoggerServiceBase loggerService;
+
+	public class LogAspect(LoggerServiceBase loggerService)ü
+	{
+		this.loggerService=loggerService;
+	}
+
+	public override void OnBefore(IInvocation invocation){
+		
+		loggerServiceBase.Info(GetLogDetail(invocation))
+	}
+
+	private object GetLogDetail(IInvocation invocation){
+		var logParameters=new List<LogParameters>
+
+		for(i=0;i<invocation.Arguments.Lenght;i++){
+			logParameters.Add(new LogParameter{
+				Name=invocation.GetConcretedmethod().GetParameters()[i].Name,
+				Value=invocation.Arguments[i],
+				Type=invocation.Argumetnts[i].GetType().Name
+			})
+		}
+
+		var logDetail=new LogDetail(){
+			MethodName=invocation.Method.Name,
+			LogParameters=logParameters
+		};
+
+		return logDetail;
+	}
+
+}
+
+****************EXCEPTION HANDLING AND MIDDLEWARE **********************************
+
+Sistemsel veya veritabaný bazlý yaþanan hatalarda program akýþý devam etmeli ancak bu htalar kullanýcýya açýk bir þekilde gösterilemmelidir. Bunun için ExceptionHandling yönetemi kullanýlmalýdýr.
+
+bunu yapmak için ExceptionLogAspect yazarak alýnan hatalar bir log a kaydedilir ve Middleware araclýgý ile kullanýcýya belirtilen mesaj gösterilir. Burada Method ýnterception içerisnde OnException ksýmýnda Exeception parametre olarak geçmemeiz gerekiyor.
+
+_> LOgDetaikl dam farklý olrak birde logDetailWithException class ý oluþturup naa sýnýftan türetip içeriisne "ExceptionMessage" property si ekliyoruz.
+
+->ExceptionLogAspect 
+	
+public class ExceptionLogAspect:MethodInterception{
+	
+	private LoggerServiceBase loggerService;
+
+	ctor(LoggerServiceBase loggerService)
+	{
+	this.loggerService=loggerService;
+	}
+
+	public override void OnException(IInvocation incovaiton,System.Exception e){
+		
+		loggerService.Error(GetLogDetail(invocation,e))
+	}
+
+	private LogDetailWithException GetLogDetail(invocation, exception){
+			
+			var logParamters=new List<LogParameter>();
+
+			for(i=0;i<invocation.Arguments.Length;i++){
+				logParameters.Add(new LogParameter(){
+					
+					Name=invocation.GetConcreteMethod().GetParameters()[i],
+					Value=invocation.Argumentes[i],
+					Type=invoation.Arguments[i].GetType().Name
+				
+				});
+
+				var logDetail=new LogDetail(){
+					MethodName=invocatipn.Method.Name,
+					LogParameters=logParametes();
+				}
+			}
+
+	}
+
+}
+
+
+->ExceptionMiddleWare 
+
+ExceptionMiddleWare yazmak için öncelikle RequestDelegate sýnýfýnýn constructor da Set edilip daha sonra InvokeAsync metodun da çaðýrýlmasý gerekir.
+
+public class ExceptionMiddleware {
+	
+	private RequestDelegate next;
+
+	ctor(RequestDelegate next){
+		this.next=next;
+	}
+
+	public async Task InvokeAsync(HttpContext context)
+
+	{
+		try{
+			await next(context);
+		}cathc(Exception e){
+			await HandleExceptionAsync(context,e)
+		}
+	}
+
+	private Task HandleExceptionAsync(HttpContext context,exception e)
+	{
+			context.Response.ContentType = "application/json";
+            context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+		string message="Internal Server Error";
+		
+
+		if(e.GetType()==typeof(ValidationException)){
+			message=e.Message;
+		}
+
+		return context.Response.WriteAsync(new ErrorDetails(){
+			Message=message,
+			StatusCode=context.Response.StatusCode
+		}.ToString());
+	}
+
+}
+
+->MiddleWare extension MiddleWare Extensions yazarak bu MiddleWare i tanýmlaypý StartUp a ekliyoruz.
+MiddleWare ler bir IAppBuilder kullanmaktadýr.
+
+public static ExceptionMiddleWare 
+{
+	public ConfigureCustomExceptionHandling(this IAppBuilder app){
+		app.UseMiddleware<ExceptionMiddleware>();
+	}
+}
+
+
+Start up içeriisnde 
+
+app.ConfigureCustomExceptionMiddleware();
+
+
+******************* BUSINESS RULESS AND CLEAN CODEE ********************************
